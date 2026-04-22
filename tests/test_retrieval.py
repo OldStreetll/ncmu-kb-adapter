@@ -198,3 +198,65 @@ async def test_fastgpt_timeout_returns_504(client, bearer, respx_mock):
     body = resp.json()
     assert body == {"error_code": "fastgpt_timeout"}
     assert "detail" not in body
+
+
+async def test_auth_bearer_missing_returns_1001(client, respx_mock):
+    """Test 5a: Authorization header absent OR not starting with 'Bearer '
+    must return 1001 per Dify spec (§10.5.4 note #3). No FastGPT call."""
+    search = respx_mock.post(SEARCH_URL)
+
+    resp = await client.post(
+        "/retrieval",
+        json={
+            "knowledge_id": "kb-1",
+            "query": "hello",
+            "retrieval_setting": {"top_k": 5, "score_threshold": 0.5},
+        },
+    )
+
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body["error_code"] == 1001
+    assert "error_msg" in body
+    assert not search.called
+
+
+async def test_auth_bearer_wrong_prefix_returns_1001(client, respx_mock):
+    """Test 5a variant: wrong auth scheme (e.g. 'Basic xxx') also → 1001."""
+    search = respx_mock.post(SEARCH_URL)
+
+    resp = await client.post(
+        "/retrieval",
+        headers={"Authorization": "Basic dXNlcjpwYXNz"},
+        json={
+            "knowledge_id": "kb-1",
+            "query": "hello",
+            "retrieval_setting": {"top_k": 5, "score_threshold": 0.5},
+        },
+    )
+
+    assert resp.status_code == 403
+    assert resp.json()["error_code"] == 1001
+    assert not search.called
+
+
+async def test_auth_token_not_in_allowed_keys_returns_1002(client, respx_mock):
+    """Test 5b: Bearer format is correct but token not in
+    KB_ADAPTER_ALLOWED_KEYS → 1002 per Dify spec. No FastGPT call."""
+    search = respx_mock.post(SEARCH_URL)
+
+    resp = await client.post(
+        "/retrieval",
+        headers={"Authorization": "Bearer totally-unknown-token"},
+        json={
+            "knowledge_id": "kb-1",
+            "query": "hello",
+            "retrieval_setting": {"top_k": 5, "score_threshold": 0.5},
+        },
+    )
+
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body["error_code"] == 1002
+    assert "error_msg" in body
+    assert not search.called
