@@ -43,3 +43,29 @@ async def test_retrieval_normal_without_metadata(client, bearer, respx_mock):
     assert '"datasetId":"kb-1"' in sent or '"datasetId": "kb-1"' in sent
     assert '"text":"hello"' in sent or '"text": "hello"' in sent
     assert "collectionIds" not in sent
+
+
+async def test_retrieval_explicit_null_metadata_condition(client, bearer, respx_mock):
+    """Dify may send `metadata_condition: null` literally; Pydantic must accept it
+    and the handler must follow the Test 1 path (no collectionIds filter)."""
+    route = respx_mock.post(SEARCH_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"code": 200, "data": [{"q": "ok", "score": 0.7, "source": "x.md"}]},
+        )
+    )
+    resp = await client.post(
+        "/retrieval",
+        headers=bearer,
+        json={
+            "knowledge_id": "kb-1",
+            "query": "hello",
+            "retrieval_setting": {"top_k": 5, "score_threshold": 0.5},
+            "metadata_condition": None,
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["records"][0]["content"] == "ok"
+    sent = route.calls.last.request.read().decode()
+    assert "collectionIds" not in sent
