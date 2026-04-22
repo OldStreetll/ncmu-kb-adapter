@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from .auth import DifyError, dify_error, verify_bearer
 from .fastgpt_client import FastGPTClient, client_from_env
 from .models import DifyRetrievalRequest
+from .translator import translate_metadata_to_collection_ids
 
 
 _FASTGPT_RESERVED = {"q", "a", "source", "score"}
@@ -39,7 +40,11 @@ def create_app(client_factory=client_from_env) -> FastAPI:
 
 
 async def _do_retrieval(body: DifyRetrievalRequest, client: FastGPTClient) -> dict:
-    collection_ids = None  # metadata translation lands in Test 3
+    collection_ids = await translate_metadata_to_collection_ids(
+        body.metadata_condition, body.knowledge_id, client,
+    )
+    if collection_ids == []:
+        return {"records": []}
     try:
         fastgpt_resp = await client.search_test(
             dataset_id=body.knowledge_id,

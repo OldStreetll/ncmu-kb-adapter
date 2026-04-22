@@ -1,8 +1,11 @@
+import json
+
 import httpx
 
 
 BASE = "http://fastgpt-test"
 SEARCH_URL = f"{BASE}/api/core/dataset/searchTest"
+COLLECTION_LIST_URL = f"{BASE}/api/core/dataset/collection/list"
 
 
 async def test_retrieval_normal_without_metadata(client, bearer, respx_mock):
@@ -69,3 +72,105 @@ async def test_retrieval_explicit_null_metadata_condition(client, bearer, respx_
     assert resp.json()["records"][0]["content"] == "ok"
     sent = route.calls.last.request.read().decode()
     assert "collectionIds" not in sent
+
+
+async def test_retrieval_filename_contains_translates_to_collection_ids(
+    client, bearer, respx_mock
+):
+    """filename contains X should: (1) hit FastGPT collection/list, (2) pick the
+    matching collection ids, (3) forward them to /searchTest as collectionIds."""
+    collection_list = respx_mock.post(COLLECTION_LIST_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 200,
+                "data": {
+                    "list": [
+                        {"_id": "col-manual-1", "name": "operations-manual-v1.pdf"},
+                        {"_id": "col-manual-2", "name": "product-manual-2025.md"},
+                        {"_id": "col-other", "name": "readme.md"},
+                    ],
+                    "total": 3,
+                },
+            },
+        )
+    )
+    search = respx_mock.post(SEARCH_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 200,
+                "data": [{"q": "filtered", "score": 0.88, "source": "operations-manual-v1.pdf"}],
+            },
+        )
+    )
+
+    resp = await client.post(
+        "/retrieval",
+        headers=bearer,
+        json={
+            "knowledge_id": "kb-1",
+            "query": "how to reboot",
+            "retrieval_setting": {"top_k": 5, "score_threshold": 0.5},
+            "metadata_condition": {
+                "logical_operator": "and",
+                "conditions": [
+                    {
+                        "name": ["filename"],
+                        "comparison_operator": "contains",
+                        "value": "manual",
+                    }
+                ],
+            },
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert collection_list.called
+    assert search.called
+
+    sent_search_body = json.loads(search.calls.last.request.read())
+    assert sent_search_body["datasetId"] == "kb-1"
+    assert sent_search_body["collectionIds"] == ["col-manual-1", "col-manual-2"]
+    assert sent_search_body["text"] == "how to reboot"
+
+
+async def test_retrieval_filter_matches_zero_collections_returns_empty(
+    client, bearer, respx_mock
+):
+    """When the filter is applied but no collection matches, we must short-circuit
+    with an empty records list and NEVER hit /searchTest."""
+    respx_mock.post(COLLECTION_LIST_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 200,
+                "data": {
+                    "list": [{"_id": "col-readme", "name": "readme.md"}],
+                    "total": 1,
+                },
+            },
+        )
+    )
+    search = respx_mock.post(SEARCH_URL).mock(
+        return_value=httpx.Response(500, json={"code": 500})
+    )
+
+    resp = await client.post(
+        "/retrieval",
+        headers=bearer,
+        json={
+            "knowledge_id": "kb-1",
+            "query": "hello",
+            "retrieval_setting": {"top_k": 5, "score_threshold": 0.5},
+            "metadata_condition": {
+                "conditions": [
+                    {"name": ["filename"], "comparison_operator": "contains", "value": "manual"}
+                ],
+            },
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"records": []}
+    assert not search.called
