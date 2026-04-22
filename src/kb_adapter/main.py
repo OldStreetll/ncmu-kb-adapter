@@ -17,7 +17,7 @@ from .models import DifyRetrievalRequest
 from .translator import translate_metadata_to_collection_ids
 
 
-_FASTGPT_RESERVED = {"q", "a", "source", "score"}
+_FASTGPT_RESERVED = {"q", "a", "source", "sourceName", "score"}
 
 
 def create_app(client_factory=client_from_env) -> FastAPI:
@@ -60,15 +60,21 @@ async def _do_retrieval(body: DifyRetrievalRequest, client: FastGPTClient) -> di
             raise dify_error(2001, 404, f"Knowledge {body.knowledge_id} not found")
         raise dify_error("fastgpt_upstream", 502, f"upstream {exc.response.status_code}")
 
-    return {"records": [_to_record(item) for item in fastgpt_resp.get("data", [])]}
+    fastgpt_items = fastgpt_resp.get("data", {}).get("list", [])
+    return {"records": [_to_record(item) for item in fastgpt_items]}
 
 
 def _to_record(item: dict) -> dict:
     metadata = {k: v for k, v in item.items() if k not in _FASTGPT_RESERVED}
+    score_raw = item.get("score")
+    if isinstance(score_raw, list) and score_raw:
+        score = score_raw[0].get("value")
+    else:
+        score = score_raw
     return {
         "content": item.get("q", ""),
-        "score": item.get("score"),
-        "title": item.get("source", ""),
+        "score": score,
+        "title": item.get("sourceName") or item.get("source", ""),
         "metadata": metadata,
     }
 

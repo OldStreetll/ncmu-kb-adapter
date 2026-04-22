@@ -14,11 +14,16 @@ async def test_retrieval_normal_without_metadata(client, bearer, respx_mock):
             200,
             json={
                 "code": 200,
-                "data": [
-                    {"q": "chunk 1 body", "score": 0.91, "source": "a.md"},
-                    {"q": "chunk 2 body", "score": 0.82, "source": "b.md"},
-                    {"q": "chunk 3 body", "score": 0.75, "source": "c.md"},
-                ],
+                "data": {
+                    "list": [
+                        {"q": "chunk 1 body", "score": [{"type": "embedding", "value": 0.91, "index": 0}], "sourceName": "a.md"},
+                        {"q": "chunk 2 body", "score": [{"type": "embedding", "value": 0.82, "index": 0}], "sourceName": "b.md"},
+                        {"q": "chunk 3 body", "score": [{"type": "embedding", "value": 0.75, "index": 0}], "sourceName": "c.md"},
+                    ],
+                    "duration": "0.102s",
+                    "searchMode": "embedding",
+                    "limit": 5,
+                },
             },
         )
     )
@@ -54,7 +59,12 @@ async def test_retrieval_explicit_null_metadata_condition(client, bearer, respx_
     route = respx_mock.post(SEARCH_URL).mock(
         return_value=httpx.Response(
             200,
-            json={"code": 200, "data": [{"q": "ok", "score": 0.7, "source": "x.md"}]},
+            json={
+                "code": 200,
+                "data": {
+                    "list": [{"q": "ok", "score": [{"type": "embedding", "value": 0.7, "index": 0}], "sourceName": "x.md"}],
+                },
+            },
         )
     )
     resp = await client.post(
@@ -100,7 +110,11 @@ async def test_retrieval_filename_contains_translates_to_collection_ids(
             200,
             json={
                 "code": 200,
-                "data": [{"q": "filtered", "score": 0.88, "source": "operations-manual-v1.pdf"}],
+                "data": {
+                    "list": [
+                        {"q": "filtered", "score": [{"type": "embedding", "value": 0.88, "index": 0}], "sourceName": "operations-manual-v1.pdf"}
+                    ],
+                },
             },
         )
     )
@@ -174,6 +188,59 @@ async def test_retrieval_filter_matches_zero_collections_returns_empty(
     assert resp.status_code == 200
     assert resp.json() == {"records": []}
     assert not search.called
+
+
+async def test_retrieval_maps_fastgpt_v4_14_10_2_shape(client, bearer, respx_mock):
+    """Explicit REWORK-13 coverage: FastGPT v4.14.10.2 returns
+    ``data.list[i]`` with ``sourceName`` (string) and ``score`` (list of
+    {type,value,index}). Verify: sourceName → records.title and
+    score[0].value → records.score (float), plus non-reserved fields flow
+    into metadata while reserved ones do not."""
+    respx_mock.post(SEARCH_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "code": 200,
+                "data": {
+                    "list": [
+                        {
+                            "id": "chunk-abc",
+                            "q": "E2E-TASK-14-MARKER body text",
+                            "a": "answer text",
+                            "sourceName": "TASK-14 手册",
+                            "score": [
+                                {"type": "embedding", "value": 0.5217, "index": 0},
+                            ],
+                            "chunkIndex": 2,
+                        }
+                    ],
+                    "duration": "0.102s",
+                    "searchMode": "embedding",
+                    "limit": 3,
+                },
+            },
+        )
+    )
+
+    resp = await client.post(
+        "/retrieval",
+        headers=bearer,
+        json={
+            "knowledge_id": "kb-1",
+            "query": "E2E-TASK-14-MARKER",
+            "retrieval_setting": {"top_k": 3, "score_threshold": 0.5},
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    records = resp.json()["records"]
+    assert len(records) == 1
+    rec = records[0]
+    assert rec["title"] == "TASK-14 手册"
+    assert rec["score"] == 0.5217
+    assert isinstance(rec["score"], float)
+    assert rec["content"] == "E2E-TASK-14-MARKER body text"
+    assert rec["metadata"] == {"id": "chunk-abc", "chunkIndex": 2}
 
 
 async def test_fastgpt_timeout_returns_504(client, bearer, respx_mock):
