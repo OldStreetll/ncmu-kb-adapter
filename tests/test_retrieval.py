@@ -174,3 +174,27 @@ async def test_retrieval_filter_matches_zero_collections_returns_empty(
     assert resp.status_code == 200
     assert resp.json() == {"records": []}
     assert not search.called
+
+
+async def test_fastgpt_timeout_returns_504(client, bearer, respx_mock):
+    """When the FastGPT call times out, kb-adapter must return HTTP 504 with a
+    top-level body ``{"error_code": "fastgpt_timeout"}`` (spec §10.5.5 Test 4).
+    NOTE: §10.5.5 uses a string error_code here whereas §10.5.4's 1001/1002/2001
+    are integers. This test follows §10.5.5 verbatim; the inconsistency is
+    flagged in README for Pane 5 to adjudicate."""
+    respx_mock.post(SEARCH_URL).mock(side_effect=httpx.ConnectTimeout("simulated timeout"))
+
+    resp = await client.post(
+        "/retrieval",
+        headers=bearer,
+        json={
+            "knowledge_id": "kb-1",
+            "query": "hello",
+            "retrieval_setting": {"top_k": 5, "score_threshold": 0.5},
+        },
+    )
+
+    assert resp.status_code == 504, resp.text
+    body = resp.json()
+    assert body == {"error_code": "fastgpt_timeout"}
+    assert "detail" not in body
