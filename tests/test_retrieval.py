@@ -361,6 +361,37 @@ async def test_fastgpt_500_returns_fastgpt_upstream_http_502(client, bearer, res
     assert "detail" not in body
 
 
+async def test_fastgpt_connect_error_returns_fastgpt_unreachable_http_502(
+    client, bearer, respx_mock
+):
+    """Test 8 (B-NEW-09): FastGPT port closed / DNS fail / connection refused
+    surfaces as ``httpx.ConnectError``. kb-adapter must map it to HTTP 502 with
+    string ``error_code="fastgpt_unreachable"`` (new infra code; spec sync
+    tracked in errata-06). NOTE: ``httpx.ConnectTimeout`` multi-inherits from
+    both ``TimeoutException`` and ``ConnectError``, so we mock a bare
+    ``ConnectError`` here to exercise the new branch without falling through
+    to the timeout branch (Test 5 already covers ConnectTimeout →
+    fastgpt_timeout, which must keep working)."""
+    respx_mock.post(SEARCH_URL).mock(
+        side_effect=httpx.ConnectError("Connection refused")
+    )
+
+    resp = await client.post(
+        "/retrieval",
+        headers=bearer,
+        json={
+            "knowledge_id": "kb-1",
+            "query": "hello",
+            "retrieval_setting": {"top_k": 5, "score_threshold": 0.5},
+        },
+    )
+
+    assert resp.status_code == 502, resp.text
+    body = resp.json()
+    assert body["error_code"] == "fastgpt_unreachable"
+    assert "detail" not in body
+
+
 async def test_auth_token_not_in_allowed_keys_returns_1002(client, respx_mock):
     """Test 5b: Bearer format is correct but token not in
     KB_ADAPTER_ALLOWED_KEYS → 1002 per Dify spec. No FastGPT call."""
