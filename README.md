@@ -55,9 +55,10 @@ Content-Type: application/json
 |------|-------------|--------------------------------------|-----------|
 | 403  | `1001` (int)| `Authorization` 缺失或格式不对       | §10.5.4 note #3 |
 | 403  | `1002` (int)| token 不在 `KB_ADAPTER_ALLOWED_KEYS` | §10.5.4 note #3 |
-| 404  | `2001` (int)| FastGPT 返回 404（知识库不存在）     | §10.5.4 note #3 |
-| 502  | `fastgpt_upstream` (str) | FastGPT 非 5xx 以外的异常        | 实现兜底 |
-| 504  | `fastgpt_timeout` (str)  | FastGPT 超时（10s）              | §10.5.5 Test 4 |
+| 200  | `2001` (int)| FastGPT 返回 404（知识库不存在），响应体含 `records: []`，由 Dify 侧短路 | §10.5.4 note #3 |
+| 502  | `fastgpt_unreachable` (str) | `httpx.ConnectError`（端口关闭 / DNS 失败 / 连接拒绝） | §10.5.5（errata-06） |
+| 502  | `fastgpt_upstream` (str) | FastGPT 返回 5xx（非 404 的 HTTP 错误）              | 实现兜底 |
+| 504  | `fastgpt_timeout` (str)  | FastGPT 超时（10s，含 ConnectTimeout）               | §10.5.5 Test 4 |
 
 > **spec 内部一致性说明**（待 Pane 5 裁决）：§10.5.4 note #3 用整数错误码（1001/1002/2001）；§10.5.5 Test 4 用字符串（`"fastgpt_timeout"`）。本实现按任务指令"优先 §10.5.5"保留字符串形式，同时用整数给 1001/1002/2001。下游（Dify）若对错误码类型敏感，需要 spec 侧统一。
 
