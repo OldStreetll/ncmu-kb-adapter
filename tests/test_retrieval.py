@@ -335,6 +335,32 @@ async def test_fastgpt_404_returns_2001_http_200(client, bearer, respx_mock):
     assert body["records"] == []
 
 
+async def test_fastgpt_500_returns_fastgpt_upstream_http_502(client, bearer, respx_mock):
+    """Test 7 (REVIEW-13 C2): FastGPT returns 500 (generic upstream error).
+    kb-adapter must surface HTTP 502 with string ``error_code="fastgpt_upstream"``
+    per spec §10.5.5 infra-error namespace. This is a regression pin — the
+    mapping exists today in main.py; the test protects against accidental
+    regression while the ConnectError branch (Test 8) is added."""
+    respx_mock.post(SEARCH_URL).mock(
+        return_value=httpx.Response(500, json={"code": 500, "message": "internal"})
+    )
+
+    resp = await client.post(
+        "/retrieval",
+        headers=bearer,
+        json={
+            "knowledge_id": "kb-1",
+            "query": "hello",
+            "retrieval_setting": {"top_k": 5, "score_threshold": 0.5},
+        },
+    )
+
+    assert resp.status_code == 502, resp.text
+    body = resp.json()
+    assert body["error_code"] == "fastgpt_upstream"
+    assert "detail" not in body
+
+
 async def test_auth_token_not_in_allowed_keys_returns_1002(client, respx_mock):
     """Test 5b: Bearer format is correct but token not in
     KB_ADAPTER_ALLOWED_KEYS → 1002 per Dify spec. No FastGPT call."""
