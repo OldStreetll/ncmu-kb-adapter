@@ -60,7 +60,7 @@ Content-Type: application/json
 | 502  | `fastgpt_upstream` (str) | FastGPT 返回 5xx（非 404 的 HTTP 错误）              | 实现兜底 |
 | 504  | `fastgpt_timeout` (str)  | FastGPT 超时（10s，含 ConnectTimeout）               | §10.5.5 Test 4 |
 
-> **spec 内部一致性说明**（待 Pane 5 裁决）：§10.5.4 note #3 用整数错误码（1001/1002/2001）；§10.5.5 Test 4 用字符串（`"fastgpt_timeout"`）。本实现按任务指令"优先 §10.5.5"保留字符串形式，同时用整数给 1001/1002/2001。下游（Dify）若对错误码类型敏感，需要 spec 侧统一。
+> **错误码契约固化**：§10.5.4 / §10.5.5 错误码类型分层（4xx int 业务码 / 5xx str infra 命名空间）已由 REVIEW-13 裁决，固化于 `NCMU-Wiki/sources/phase0/ncmu-dify-design-v3-2026-04-22-errata-05.md`；TASK-17 新增 `fastgpt_unreachable` 命名空间归属 §10.5.5 infra 段，登记于 `sources/phase1/ncmu-dify-design-v3-2026-04-23-errata-06.md`；TASK-17 同时校正 404 KB-not-found 为 HTTP 200 + `records:[]`（与 Dify External KB API 上游约定对齐），最终定案见 `sources/phase1/ncmu-dify-design-v3-2026-04-23-errata-07.md`。spec 主文档将在 v3.3.2 修订时按上述 errata 套用措辞。
 
 ## `metadata_condition → collectionIds` 翻译
 
