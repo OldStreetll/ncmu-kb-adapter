@@ -307,6 +307,34 @@ async def test_auth_bearer_wrong_prefix_returns_1001(client, respx_mock):
     assert not search.called
 
 
+async def test_fastgpt_404_returns_2001_http_200(client, bearer, respx_mock):
+    """Test 6 (REVIEW-13 C2): FastGPT returns 404 (dataset/knowledge_id
+    not found). kb-adapter must return HTTP 200 with a Dify-compatible body
+    carrying ``error_code=2001`` (int per spec §10.5.4) plus an empty
+    ``records`` list so Dify's retrieval flow short-circuits gracefully
+    rather than surfacing an HTTP error."""
+    respx_mock.post(SEARCH_URL).mock(
+        return_value=httpx.Response(404, json={"code": 404, "message": "dataset not found"})
+    )
+
+    resp = await client.post(
+        "/retrieval",
+        headers=bearer,
+        json={
+            "knowledge_id": "kb-missing",
+            "query": "hello",
+            "retrieval_setting": {"top_k": 5, "score_threshold": 0.5},
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["error_code"] == 2001
+    assert isinstance(body["error_code"], int)
+    assert "error_msg" in body
+    assert body["records"] == []
+
+
 async def test_auth_token_not_in_allowed_keys_returns_1002(client, respx_mock):
     """Test 5b: Bearer format is correct but token not in
     KB_ADAPTER_ALLOWED_KEYS → 1002 per Dify spec. No FastGPT call."""
