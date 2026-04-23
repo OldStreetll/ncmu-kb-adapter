@@ -57,7 +57,11 @@ async def _do_retrieval(body: DifyRetrievalRequest, client: FastGPTClient) -> di
         raise dify_error("fastgpt_timeout", 504)
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
-            raise dify_error(2001, 404, f"Knowledge {body.knowledge_id} not found")
+            return {
+                "error_code": 2001,
+                "error_msg": f"Knowledge {body.knowledge_id} not found",
+                "records": [],
+            }
         raise dify_error("fastgpt_upstream", 502, f"upstream {exc.response.status_code}")
 
     fastgpt_items = fastgpt_resp.get("data", {}).get("list", [])
