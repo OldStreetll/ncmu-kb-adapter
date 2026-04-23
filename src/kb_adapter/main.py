@@ -55,6 +55,8 @@ async def _do_retrieval(body: DifyRetrievalRequest, client: FastGPTClient) -> di
         )
     except httpx.TimeoutException:
         raise dify_error("fastgpt_timeout", 504)
+    except httpx.ConnectError:
+        raise dify_error("fastgpt_unreachable", 502)
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             return {
