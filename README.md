@@ -55,12 +55,12 @@ Content-Type: application/json
 |------|-------------|--------------------------------------|-----------|
 | 403  | `1001` (int)| `Authorization` 缺失或格式不对       | §10.5.4 note #3 |
 | 403  | `1002` (int)| token 不在 `KB_ADAPTER_ALLOWED_KEYS` | §10.5.4 note #3 |
-| 200  | `2001` (int)| FastGPT 返回 404（知识库不存在），响应体含 `records: []`，由 Dify 侧短路 | §10.5.4 note #3 |
+| 404  | `2001` (int)| FastGPT 返回 404（知识库 / dataset 不存在），kb-adapter 透传 HTTP 404 + `error_code`/`error_msg`（无 `records` 字段） | §10.5 line 958-959 |
 | 502  | `fastgpt_unreachable` (str) | `httpx.ConnectError`（端口关闭 / DNS 失败 / 连接拒绝） | §10.5.5（errata-06） |
 | 502  | `fastgpt_upstream` (str) | FastGPT 返回 5xx（非 404 的 HTTP 错误）              | 实现兜底 |
 | 504  | `fastgpt_timeout` (str)  | FastGPT 超时（10s，含 ConnectTimeout）               | §10.5.5 Test 4 |
 
-> **错误码契约固化**：§10.5.4 / §10.5.5 错误码类型分层（4xx int 业务码 / 5xx str infra 命名空间）已由 REVIEW-13 裁决，固化于 `NCMU-Wiki/sources/phase0/ncmu-dify-design-v3-2026-04-22-errata-05.md`；TASK-17 新增 `fastgpt_unreachable` 命名空间归属 §10.5.5 infra 段，登记于 `NCMU-Wiki/sources/phase1/ncmu-dify-design-v3-2026-04-23-errata-06.md`；TASK-17 同时校正 404 KB-not-found 为 HTTP 200 + `records:[]`（与 Dify External KB API 上游约定对齐），最终定案见 `NCMU-Wiki/sources/phase1/ncmu-dify-design-v3-2026-04-23-errata-07.md`。spec 主文档将在 v3.3.2 修订时按上述 errata 套用措辞。
+> **错误码契约固化**：§10.5.4 / §10.5.5 错误码类型分层（4xx int 业务码 / 5xx str infra 命名空间）已由 REVIEW-13 裁决，固化于 `NCMU-Wiki/sources/phase0/ncmu-dify-design-v3-2026-04-22-errata-05.md`；TASK-17 新增 `fastgpt_unreachable` 命名空间归属 §10.5.5 infra 段，登记于 `NCMU-Wiki/sources/phase1/ncmu-dify-design-v3-2026-04-23-errata-06.md`。TASK-17 曾按 `NCMU-Wiki/sources/phase1/ncmu-dify-design-v3-2026-04-23-errata-07.md` 把 404 KB-not-found 校正为 HTTP 200 + `records:[]`；该决策在 Phase 1 M2 AC#3.b 阻塞分析后回归（commit `f58b2e6` / TASK-PRE-1）：404 路径恢复 `raise` HTTP 404 + `error_code=2001`（int），与 spec §10.5 line 958-959 字面一致；errata-07 关于 200+`records=[]` 的分支已撤销，仅 errata-06 `fastgpt_unreachable` 归属 §10.5.5 仍生效。spec 主文档将在 v3.3.2 修订时按 errata-05 / errata-06 套用措辞（errata-07 分支不再纳入）。
 
 ## `metadata_condition → collectionIds` 翻译
 
