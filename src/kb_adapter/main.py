@@ -23,6 +23,18 @@ _FASTGPT_RESERVED = {"q", "a", "source", "sourceName", "score"}
 def create_app(client_factory=client_from_env) -> FastAPI:
     app = FastAPI(title="ncmu-kb-adapter")
 
+    @app.middleware("http")
+    async def strip_via_header(request: Request, call_next):
+        # B-NEW-08: Dify's squid side-car injects Via on any upstream 4xx/5xx
+        # and rewrites the body to a generic SSRF error, hiding our 1001/1002/
+        # 2001 payload from the SPA. Stripping Via here keeps our responses
+        # free of the trigger so squid forwards them verbatim.
+        response = await call_next(request)
+        # Starlette's MutableHeaders has no .pop(); use case-insensitive del.
+        if "via" in response.headers:
+            del response.headers["via"]
+        return response
+
     @app.exception_handler(DifyError)
     async def _dify_error_handler(_: Request, exc: DifyError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content=exc.body)
